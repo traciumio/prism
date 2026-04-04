@@ -44,11 +44,10 @@ const lenses = [
   {
     id: "learn" as const,
     label: "Learning Lens",
-    caption: "Same signal, calmer explanation",
+    caption: "Keep the same signal, but explain it more gently",
   },
 ];
 
-// Architecture data stays hardcoded for now (Atlas not wired yet)
 const graphNodes: GraphNode[] = [
   { id: "prism-ui", label: "Prism UI", kind: "product surface", owner: "frontend-platform", summary: "Hosts runtime and architecture workspaces while staying contract-driven.", stress: "High user traffic", contracts: ["GET /sessions/runtime/:id", "GET /graphs/:id"], x: 16, y: 20 },
   { id: "nerva", label: "Nerva API", kind: "control plane", owner: "platform-core", summary: "Brokers sessions, auth, and client-facing orchestration.", stress: "Central routing boundary", contracts: ["POST /sessions/runtime", "POST /analysis/repos"], x: 41, y: 16 },
@@ -67,10 +66,21 @@ const graphEdges: GraphEdge[] = [
   { from: "pulse", to: "prism-ui", label: "open insight" },
 ];
 
-const platformCards = [
-  { title: "Runtime", body: "Tracium Engine supplies UEF traces. Prism only renders them." },
-  { title: "Structure", body: "Atlas supplies UGF graphs so architecture stays distinct from execution." },
-  { title: "Contracts", body: "Quanta keeps payload shapes stable while Prism focuses on interaction." },
+const runtimeCode = [
+  "1  class Main {",
+  "2    public static void main(String[] args) {",
+  "3      int[] arr = {3, 1, 2};",
+  "4      for (int i = 0; i < arr.length; i++) {",
+  "5        for (int j = 0; j < arr.length - 1; j++) {",
+  "6          if (arr[j] > arr[j + 1]) {",
+  "7            int tmp = arr[j];",
+  "8            arr[j] = arr[j + 1];",
+  "9            arr[j + 1] = tmp;",
+  "10         }",
+  "11       }",
+  "12     }",
+  "13   }",
+  "14 }",
 ];
 
 const DEFAULT_CODE = `class Main {
@@ -88,6 +98,21 @@ const DEFAULT_CODE = `class Main {
   }
 }`;
 
+const platformCards = [
+  {
+    title: "Runtime",
+    body: "Tracium Engine supplies UEF traces. Prism only renders them.",
+  },
+  {
+    title: "Structure",
+    body: "Atlas supplies UGF graphs so architecture stays distinct from execution.",
+  },
+  {
+    title: "Contracts",
+    body: "Quanta keeps payload shapes stable while Prism focuses on interaction.",
+  },
+];
+
 function getNode(nodeId: string) {
   return graphNodes.find((node) => node.id === nodeId);
 }
@@ -95,41 +120,54 @@ function getNode(nodeId: string) {
 export function App() {
   const [surface, setSurface] = useState<Surface>("runtime");
   const [lens, setLens] = useState<Lens>("debug");
-  const [selectedRuntimeId, setSelectedRuntimeId] = useState<string>("");
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState("");
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("nerva");
   const [code, setCode] = useState(DEFAULT_CODE);
+  const [showEditor, setShowEditor] = useState(false);
 
-  const { session, run, reset } = useRuntimeSession();
+  const { session, run } = useRuntimeSession();
 
-  const runtimeEvents = session.events;
-  const runtimeCode = session.codeLines.length > 0
-    ? session.codeLines
-    : code.split("\n").map((line, i) => `${String(i + 1).padStart(3)}  ${line}`);
+  // Use real data when available, otherwise show nothing (idle state)
+  const runtimeEvents: RuntimeEvent[] = session.status === "ready" ? session.events : [];
+  const activeCode = session.status === "ready" ? session.codeLines : runtimeCode;
 
-  const selectedRuntime: RuntimeEvent = runtimeEvents.find(e => e.id === selectedRuntimeId)
-    ?? runtimeEvents[0]
-    ?? { id: "", step: 0, line: "?", event: "IDLE", delta: "", summary: "Submit code to see execution trace.", stack: [], heap: [] };
+  // Auto-select first meaningful event when trace arrives
+  if (runtimeEvents.length > 0 && !runtimeEvents.find(e => e.id === selectedRuntimeId)) {
+    const first = runtimeEvents.find(e =>
+      e.event !== "LINE_CHANGED" && e.event !== "METHOD_ENTERED"
+    ) ?? runtimeEvents[0];
+    if (first) setSelectedRuntimeId(first.id);
+  }
 
-  const selectedGraphNode = graphNodes.find((node) => node.id === selectedGraphNodeId) ?? graphNodes[0];
+  const selectedRuntime: RuntimeEvent =
+    runtimeEvents.find((event) => event.id === selectedRuntimeId) ??
+    runtimeEvents[0] ??
+    { id: "", step: 0, line: "?", event: "IDLE", delta: "", summary: "Run code to see execution trace.", stack: [], heap: [] };
+
+  const selectedGraphNode =
+    graphNodes.find((node) => node.id === selectedGraphNodeId) ?? graphNodes[0];
+
   const relatedEdges = graphEdges.filter(
     (edge) => edge.from === selectedGraphNode.id || edge.to === selectedGraphNode.id,
   );
 
-  const lensCopy = lens === "debug"
-    ? { headline: "Technical inspection", body: "Expose exact state transitions and keep the raw structure visible.", modePill: "Truth-first" }
-    : { headline: "Guided explanation", body: "Use the same source of truth but present it with calmer, more teachable framing.", modePill: "Learning-first" };
+  const lensCopy =
+    lens === "debug"
+      ? {
+          headline: "Technical inspection",
+          body: "Expose exact state transitions and memory truth.",
+          modePill: "Precise runtime and topology inspection",
+        }
+      : {
+          headline: "Guided explanation",
+          body: "Use the same source of truth but present it with calmer, more teachable framing.",
+          modePill: "Learning-first",
+        };
 
   async function handleRun() {
-    await run(code);
-    // Select the first meaningful step after run
-    // (will be updated once session.events is populated via re-render)
-  }
-
-  // Auto-select first event when events change
-  if (runtimeEvents.length > 0 && !runtimeEvents.find(e => e.id === selectedRuntimeId)) {
-    // Pick the first non-trivial step (skip SESSION_STARTED which is filtered out)
-    const firstMeaningful = runtimeEvents.find(e => e.event !== "LINE_CHANGED") ?? runtimeEvents[0];
-    if (firstMeaningful) setSelectedRuntimeId(firstMeaningful.id);
+    const sourceCode = showEditor ? code : DEFAULT_CODE;
+    setShowEditor(false);
+    await run(sourceCode);
   }
 
   return (
@@ -137,26 +175,43 @@ export function App() {
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
 
+      {/* ── Top bar ── */}
       <section className="topbar">
         <div className="topbar-copy">
-          <p className="eyebrow">Prism Workspace</p>
-          <h1>Runtime and architecture, without the clutter.</h1>
+          <p className="eyebrow">PRISM</p>
+          <h1>One visual workspace for runtime truth and repo structure.</h1>
           <p>
-            Prism should feel like a focused product surface, not a dashboard of
-            competing cards. The active analysis stays central and everything
-            else supports it.
+            Prism is the product surface for Tracium. It keeps runtime and
+            architecture as distinct intelligence tracks, then lets people move
+            between them without collapsing the ecosystem into one oversized app.
           </p>
           <div className="topbar-pills">
             <span>UEF playback</span>
             <span>UGF topology</span>
             <span>{lensCopy.modePill}</span>
-            {session.status === "ready" && <span>{session.events.length} steps</span>}
           </div>
         </div>
 
         <div className="topbar-controls">
+          <div className="topbar-stats">
+            <div className="stat-block">
+              <p className="stat-label">Runtime sessions</p>
+              <p className="stat-value">
+                <strong>{session.status === "ready" ? session.events.length : 0}</strong>
+                <span>steps captured</span>
+              </p>
+            </div>
+            <div className="stat-block">
+              <p className="stat-label">Current lens</p>
+              <p className="stat-value">
+                <strong>{lens === "debug" ? "Debug Truth" : "Learning Lens"}</strong>
+                <span>{lensCopy.body}</span>
+              </p>
+            </div>
+          </div>
+
           <div className="control-block">
-            <p className="control-label">Surface</p>
+            <p className="control-label">SURFACE</p>
             <div className="segmented">
               {surfaces.map((item) => (
                 <button
@@ -173,7 +228,7 @@ export function App() {
           </div>
 
           <div className="control-block">
-            <p className="control-label">Lens</p>
+            <p className="control-label">LENS</p>
             <div className="segmented compact">
               {lenses.map((item) => (
                 <button
@@ -191,48 +246,70 @@ export function App() {
         </div>
       </section>
 
+      {/* ── Workspace ── */}
       <section className="workspace">
         <aside className="sidebar">
           <div className="sidebar-head">
-            <p className="eyebrow">Workspace</p>
-            <h2>{surface === "runtime" ? "Runtime timeline" : "Architecture map"}</h2>
+            <p className="eyebrow">WORKSPACE</p>
+            <h2>
+              {surface === "runtime"
+                ? session.status === "ready"
+                  ? "Active runtime session"
+                  : "Runtime timeline"
+                : "Architecture map"}
+            </h2>
             <p>{lensCopy.body}</p>
           </div>
 
+          {/* Run / Edit controls for runtime surface */}
           {surface === "runtime" && (
-            <div className="sidebar-head" style={{ paddingTop: 0 }}>
-              <button
-                type="button"
-                className="segment active"
-                onClick={handleRun}
-                disabled={session.status === "loading"}
-                style={{ width: "100%", justifyContent: "center", cursor: "pointer" }}
-              >
-                <strong>{session.status === "loading" ? "Executing..." : "Run Code"}</strong>
+            <div className="sidebar-actions">
+              <button type="button" className="run-button" onClick={handleRun}
+                disabled={session.status === "loading"}>
+                {session.status === "loading" ? "Executing..." : "Run Code"}
               </button>
+              <button type="button" className="edit-button"
+                onClick={() => setShowEditor(!showEditor)}>
+                {showEditor ? "Hide Editor" : "Edit Code"}
+              </button>
+            </div>
+          )}
+
+          {/* Editor panel */}
+          {showEditor && surface === "runtime" && (
+            <div className="code-editor-wrap">
+              <textarea
+                className="code-editor"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                spellCheck={false}
+                rows={14}
+              />
             </div>
           )}
 
           <div className="sidebar-list">
             {surface === "runtime" ? (
               session.status === "idle" ? (
-                <div className="sidebar-item" style={{ opacity: 0.5 }}>
-                  <div><strong>No trace yet</strong><p>Click "Run Code" to execute</p></div>
+                <div className="sidebar-empty">
+                  <p>Click <strong>Run Code</strong> to execute Java and capture a trace.</p>
                 </div>
               ) : session.status === "loading" ? (
-                <div className="sidebar-item" style={{ opacity: 0.5 }}>
-                  <div><strong>Executing...</strong><p>Compiling and tracing via JDI</p></div>
+                <div className="sidebar-empty">
+                  <p>Compiling and tracing via JDI...</p>
                 </div>
               ) : session.status === "error" ? (
-                <div className="sidebar-item" style={{ opacity: 0.5, color: "#ff6b6b" }}>
-                  <div><strong>Error</strong><p>{session.error}</p></div>
+                <div className="sidebar-empty sidebar-error">
+                  <p>{session.error}</p>
                 </div>
               ) : (
                 runtimeEvents.map((event) => (
                   <button
                     key={event.id}
                     type="button"
-                    className={selectedRuntimeId === event.id ? "sidebar-item active" : "sidebar-item"}
+                    className={
+                      selectedRuntimeId === event.id ? "sidebar-item active" : "sidebar-item"
+                    }
                     onClick={() => setSelectedRuntimeId(event.id)}
                   >
                     <span className="sidebar-index">{event.step}</span>
@@ -248,11 +325,17 @@ export function App() {
                 <button
                   key={node.id}
                   type="button"
-                  className={selectedGraphNodeId === node.id ? "sidebar-item active" : "sidebar-item"}
+                  className={
+                    selectedGraphNodeId === node.id ? "sidebar-item active" : "sidebar-item"
+                  }
                   onClick={() => setSelectedGraphNodeId(node.id)}
                 >
                   <span className="sidebar-index glyph">
-                    {node.label.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+                    {node.label
+                      .split(" ")
+                      .map((part) => part[0])
+                      .join("")
+                      .slice(0, 2)}
                   </span>
                   <div>
                     <strong>{node.label}</strong>
@@ -267,7 +350,7 @@ export function App() {
         <section className="content">
           <div className="content-head">
             <div>
-              <p className="eyebrow">Now Viewing</p>
+              <p className="eyebrow">NOW VIEWING</p>
               <h2>
                 {surface === "runtime"
                   ? session.status === "ready"
@@ -290,61 +373,41 @@ export function App() {
               <article className="primary-panel primary-panel-dark">
                 <div className="panel-head">
                   <div>
-                    <p className="panel-eyebrow">
-                      {session.status === "ready" ? "Trace timeline" : "Code editor"}
-                    </p>
+                    <p className="panel-eyebrow">TRACE TIMELINE</p>
                     <h3>{session.status === "ready" ? selectedRuntime.event : "Submit Java code"}</h3>
                   </div>
-                  {session.status === "ready" && (
-                    <span className="panel-pill">{selectedRuntime.delta}</span>
+                  {session.status === "ready" && selectedRuntime.delta && (
+                    <span className="panel-pill">Delta: {selectedRuntime.delta}</span>
                   )}
                 </div>
+
                 {session.status === "ready" && (
                   <p className="panel-body">{selectedRuntime.summary}</p>
                 )}
 
-                {session.status !== "ready" ? (
-                  <div className="code-frame">
-                    <div className="code-head">
-                      <span>Main.java</span>
-                      <span>Edit code below, then click Run</span>
-                    </div>
-                    <textarea
-                      className="code-body"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      spellCheck={false}
-                      style={{
-                        width: "100%", minHeight: 220, background: "transparent",
-                        color: "inherit", border: "none", resize: "vertical",
-                        fontFamily: "inherit", fontSize: "inherit", lineHeight: "inherit",
-                        padding: "1rem", outline: "none",
-                      }}
-                    />
+                <div className="code-frame">
+                  <div className="code-head">
+                    <span>Main.java</span>
+                    <span>Line synced to selected step</span>
                   </div>
-                ) : (
-                  <div className="code-frame">
-                    <div className="code-head">
-                      <span>{session.trace?.session?.entrypoint ?? "Main.java"}</span>
-                      <span>Line-synced trace playback</span>
-                    </div>
-                    <div className="code-body">
-                      {runtimeCode.map((line, idx) => {
-                        const lineNum = idx + 1;
-                        const isActive = selectedRuntime.line?.includes(`:${lineNum}`);
+                  <div className="code-body">
+                    {activeCode.map((line, idx) => {
+                      const lineNum = idx + 1;
+                      const isActive = session.status === "ready"
+                        ? selectedRuntime.line?.includes(`:${lineNum}`)
+                        : false;
 
-                        return (
-                          <div
-                            key={idx}
-                            className={isActive ? "code-line active" : "code-line"}
-                          >
-                            {line}
-                          </div>
-                        );
-                      })}
-                    </div>
+                      return (
+                        <div
+                          key={idx}
+                          className={isActive ? "code-line active" : "code-line"}
+                        >
+                          {line}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
               </article>
 
               <div className="support-grid">
@@ -360,15 +423,25 @@ export function App() {
                   <div className="memory-grid">
                     <div className="memory-column">
                       <p className="memory-label">Stack</p>
-                      {(selectedRuntime.stack.length > 0 ? selectedRuntime.stack : ["(no frames)"]).map((item, i) => (
-                        <span key={i} className="memory-pill">{item}</span>
+                      {(selectedRuntime.stack.length > 0
+                        ? selectedRuntime.stack
+                        : ["(no frames)"]
+                      ).map((item, i) => (
+                        <span key={i} className="memory-pill">
+                          {item}
+                        </span>
                       ))}
                     </div>
 
                     <div className="memory-column">
                       <p className="memory-label">Heap</p>
-                      {(selectedRuntime.heap.length > 0 ? selectedRuntime.heap : ["(empty heap)"]).map((item, i) => (
-                        <span key={i} className="memory-pill">{item}</span>
+                      {(selectedRuntime.heap.length > 0
+                        ? selectedRuntime.heap
+                        : ["(empty heap)"]
+                      ).map((item, i) => (
+                        <span key={i} className="memory-pill">
+                          {item}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -387,15 +460,17 @@ export function App() {
                   <div className="detail-block">
                     <p className="detail-label">Observed state</p>
                     <div className="detail-pills">
-                      {[selectedRuntime.delta, ...selectedRuntime.heap].filter(Boolean).map((item, i) => (
-                        <span key={i}>{item}</span>
-                      ))}
+                      {[selectedRuntime.delta, ...selectedRuntime.heap]
+                        .filter(Boolean)
+                        .map((item, i) => (
+                          <span key={i}>{item}</span>
+                        ))}
                     </div>
                   </div>
 
                   {session.status === "ready" && session.trace?.session && (
                     <div className="detail-block">
-                      <p className="detail-label">Session</p>
+                      <p className="detail-label">Session info</p>
                       <div className="detail-pills">
                         <span>{session.trace.session.language}</span>
                         <span>{session.trace.session.adapter}</span>
@@ -420,23 +495,36 @@ export function App() {
                 <p className="panel-body">{selectedGraphNode.summary}</p>
 
                 <div className="graph-frame">
-                  <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <svg
+                    className="graph-svg"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
                     {graphEdges.map((edge) => {
                       const from = getNode(edge.from);
                       const to = getNode(edge.to);
                       if (!from || !to) return null;
                       return (
-                        <line key={`${edge.from}-${edge.to}`}
+                        <line
+                          key={`${edge.from}-${edge.to}`}
                           x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                          className="graph-edge" />
+                          className="graph-edge"
+                        />
                       );
                     })}
                   </svg>
+
                   {graphNodes.map((node) => (
-                    <button key={node.id} type="button"
-                      className={selectedGraphNodeId === node.id ? "graph-node active" : "graph-node"}
+                    <button
+                      key={node.id}
+                      type="button"
+                      className={
+                        selectedGraphNodeId === node.id ? "graph-node active" : "graph-node"
+                      }
                       style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                      onClick={() => setSelectedGraphNodeId(node.id)}>
+                      onClick={() => setSelectedGraphNodeId(node.id)}
+                    >
                       <span>{node.label}</span>
                       <small>{node.kind}</small>
                     </button>
@@ -453,10 +541,13 @@ export function App() {
                     </div>
                     <span className="panel-pill panel-pill-soft">{relatedEdges.length} links</span>
                   </div>
+
                   <div className="edge-list">
                     {relatedEdges.map((edge) => (
                       <div key={`${edge.from}-${edge.to}`} className="edge-row">
-                        <strong>{getNode(edge.from)?.label} {"->"} {getNode(edge.to)?.label}</strong>
+                        <strong>
+                          {getNode(edge.from)?.label} {"->"} {getNode(edge.to)?.label}
+                        </strong>
                         <span>{edge.label}</span>
                       </div>
                     ))}
@@ -467,10 +558,12 @@ export function App() {
                   <p className="panel-eyebrow">{lensCopy.headline}</p>
                   <h3>{selectedGraphNode.label}</h3>
                   <p className="panel-body">{lensCopy.body}</p>
+
                   <div className="detail-block">
                     <p className="detail-label">Owner</p>
                     <strong>{selectedGraphNode.owner}</strong>
                   </div>
+
                   <div className="detail-block">
                     <p className="detail-label">Contracts</p>
                     <div className="detail-pills">
@@ -479,6 +572,7 @@ export function App() {
                       ))}
                     </div>
                   </div>
+
                   <div className="detail-block">
                     <p className="detail-label">Pressure</p>
                     <strong>{selectedGraphNode.stress}</strong>

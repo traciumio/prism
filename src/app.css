@@ -592,3 +592,106 @@ button {
     padding: 10px 12px;
   }
 }
+
+/* ── Run / Edit controls ── */
+
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.run-button {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--accent-warm, #b55233);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.run-button:hover { opacity: 0.9; }
+.run-button:disabled { opacity: 0.5; cursor: wait; }
+
+.edit-button {
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--text-neutral, #506177);
+  border: 1px solid var(--border, #d0d8e0);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.edit-button:hover { background: rgba(0,0,0,0.03); }
+
+.code-editor-wrap {
+  padding: 0 20px 12px;
+}
+
+.code-editor {
+  width: 100%;
+  padding: 12px;
+  background: var(--panel-dark, #1a2235);
+  color: var(--text-light, #eef4fb);
+  border: 1px solid var(--border, #2a3a50);
+  border-radius: 8px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.code-editor:focus {
+  border-color: var(--accent-warm, #b55233);
+}
+
+.sidebar-empty {
+  padding: 20px;
+  color: var(--text-neutral, #506177);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.sidebar-error {
+  color: #d63031;
+}
+
+.topbar-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.stat-block {
+  flex: 1;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-neutral, #506177);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 0.9rem;
+}
+
+.stat-value strong {
+  display: block;
+  font-size: 1.1rem;
+}
+
+.stat-value span {
+  color: var(--text-neutral, #506177);
+  font-size: 0.82rem;
+}
