@@ -16,36 +16,16 @@ type GraphNode = {
   y: number;
 };
 
-type GraphEdge = {
-  from: string;
-  to: string;
-  label: string;
-};
+type GraphEdge = { from: string; to: string; label: string };
 
 const surfaces = [
-  {
-    id: "runtime" as const,
-    label: "Runtime Studio",
-    caption: "UEF sessions from Tracium Engine",
-  },
-  {
-    id: "architecture" as const,
-    label: "Architecture Lens",
-    caption: "UGF topology from Atlas",
-  },
+  { id: "runtime" as const, label: "Runtime Studio", caption: "UEF sessions from Tracium Engine" },
+  { id: "architecture" as const, label: "Architecture Lens", caption: "UGF topology from Atlas" },
 ];
 
 const lenses = [
-  {
-    id: "debug" as const,
-    label: "Debug Truth",
-    caption: "Precise frames, refs, and transitions",
-  },
-  {
-    id: "learn" as const,
-    label: "Learning Lens",
-    caption: "Keep the same signal, but explain it more gently",
-  },
+  { id: "debug" as const, label: "Debug Truth", caption: "Expose precise frames, refs, and transitions" },
+  { id: "learn" as const, label: "Learning Lens", caption: "Keep the same signal, but explain it more gently" },
 ];
 
 const graphNodes: GraphNode[] = [
@@ -64,6 +44,15 @@ const graphEdges: GraphEdge[] = [
   { from: "engine", to: "quanta", label: "UEF" },
   { from: "atlas", to: "quanta", label: "UGF" },
   { from: "pulse", to: "prism-ui", label: "open insight" },
+];
+
+// Default mock events shown before any real trace is loaded
+const mockEvents: RuntimeEvent[] = [
+  { id: "evt-01", step: 38, line: "Main.java:4", event: "FRAME_CREATED", delta: "main -> frame#1", summary: "The runtime opens a frame for main and anchors local scope.", stack: ["main(args) -> frame#1", "locals: arr, i, j"], heap: ["ref#01 int[3] = [3, 1, 2]"] },
+  { id: "evt-02", step: 39, line: "Main.java:6", event: "CONDITION_EVALUATED", delta: "arr[j] > arr[j + 1] == true", summary: "The branch resolves true, so Prism keeps focus on the swap path.", stack: ["main(frame#1)", "i = 0", "j = 0"], heap: ["ref#01 int[3] = [3, 1, 2]"] },
+  { id: "evt-03", step: 40, line: "Main.java:7", event: "VARIABLE_ASSIGNED", delta: "tmp = 3", summary: "A temporary variable captures the left value before mutation.", stack: ["main(frame#1)", "tmp = 3", "j = 0"], heap: ["ref#01 int[3] = [3, 1, 2]"] },
+  { id: "evt-04", step: 41, line: "Main.java:8", event: "ARRAY_WRITE", delta: "arr[0] = 1", summary: "Heap state changes in place, and the reference identity stays stable.", stack: ["main(frame#1)", "tmp = 3", "j = 0"], heap: ["ref#01 int[3] = [1, 1, 2]"] },
+  { id: "evt-05", step: 42, line: "Main.java:9", event: "ARRAY_WRITE", delta: "arr[1] = 3", summary: "The swap completes and the tracked heap object settles to the new order.", stack: ["main(frame#1)", "tmp = 3", "j = 0"], heap: ["ref#01 int[3] = [1, 3, 2]"] },
 ];
 
 const runtimeCode = [
@@ -99,83 +88,48 @@ const DEFAULT_CODE = `class Main {
 }`;
 
 const platformCards = [
-  {
-    title: "Runtime",
-    body: "Tracium Engine supplies UEF traces. Prism only renders them.",
-  },
-  {
-    title: "Structure",
-    body: "Atlas supplies UGF graphs so architecture stays distinct from execution.",
-  },
-  {
-    title: "Contracts",
-    body: "Quanta keeps payload shapes stable while Prism focuses on interaction.",
-  },
+  { title: "Runtime", body: "Tracium Engine supplies UEF traces. Prism only renders them." },
+  { title: "Structure", body: "Atlas supplies UGF graphs so architecture stays distinct from execution." },
+  { title: "Contracts", body: "Quanta keeps payload shapes stable while Prism focuses on interaction." },
 ];
 
 function getNode(nodeId: string) {
-  return graphNodes.find((node) => node.id === nodeId);
+  return graphNodes.find((n) => n.id === nodeId);
 }
 
 export function App() {
   const [surface, setSurface] = useState<Surface>("runtime");
   const [lens, setLens] = useState<Lens>("debug");
-  const [selectedRuntimeId, setSelectedRuntimeId] = useState("");
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState(mockEvents[2].id);
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("nerva");
-  const [code, setCode] = useState(DEFAULT_CODE);
-  const [showEditor, setShowEditor] = useState(false);
 
   const { session, run } = useRuntimeSession();
 
-  // Use real data when available, otherwise show nothing (idle state)
-  const runtimeEvents: RuntimeEvent[] = session.status === "ready" ? session.events : [];
-  const activeCode = session.status === "ready" ? session.codeLines : runtimeCode;
+  // Use real data when a trace is ready, otherwise show mock
+  const isLive = session.status === "ready";
+  const runtimeEvents = isLive ? session.events : mockEvents;
+  const activeCode = isLive ? session.codeLines : runtimeCode;
 
-  // Auto-select first meaningful event when trace arrives
-  if (runtimeEvents.length > 0 && !runtimeEvents.find(e => e.id === selectedRuntimeId)) {
-    const first = runtimeEvents.find(e =>
-      e.event !== "LINE_CHANGED" && e.event !== "METHOD_ENTERED"
-    ) ?? runtimeEvents[0];
+  // Auto-select first meaningful event when new trace arrives
+  if (isLive && !runtimeEvents.find((e) => e.id === selectedRuntimeId)) {
+    const first = runtimeEvents.find((e) => e.event === "VARIABLE_ASSIGNED") ?? runtimeEvents[0];
     if (first) setSelectedRuntimeId(first.id);
   }
 
-  const selectedRuntime: RuntimeEvent =
-    runtimeEvents.find((event) => event.id === selectedRuntimeId) ??
-    runtimeEvents[0] ??
-    { id: "", step: 0, line: "?", event: "IDLE", delta: "", summary: "Run code to see execution trace.", stack: [], heap: [] };
+  const selectedRuntime = runtimeEvents.find((e) => e.id === selectedRuntimeId) ?? runtimeEvents[0];
+  const selectedGraphNode = graphNodes.find((n) => n.id === selectedGraphNodeId) ?? graphNodes[0];
+  const relatedEdges = graphEdges.filter((e) => e.from === selectedGraphNode.id || e.to === selectedGraphNode.id);
 
-  const selectedGraphNode =
-    graphNodes.find((node) => node.id === selectedGraphNodeId) ?? graphNodes[0];
-
-  const relatedEdges = graphEdges.filter(
-    (edge) => edge.from === selectedGraphNode.id || edge.to === selectedGraphNode.id,
-  );
-
-  const lensCopy =
-    lens === "debug"
-      ? {
-          headline: "Technical inspection",
-          body: "Expose exact state transitions and memory truth.",
-          modePill: "Precise runtime and topology inspection",
-        }
-      : {
-          headline: "Guided explanation",
-          body: "Use the same source of truth but present it with calmer, more teachable framing.",
-          modePill: "Learning-first",
-        };
-
-  async function handleRun() {
-    const sourceCode = showEditor ? code : DEFAULT_CODE;
-    setShowEditor(false);
-    await run(sourceCode);
-  }
+  const lensCopy = lens === "debug"
+    ? { headline: "Technical inspection", body: "Expose exact state transitions and memory truth.", modePill: "Precise runtime and topology inspection" }
+    : { headline: "Guided explanation", body: "Use the same source of truth but present it with calmer, more teachable framing.", modePill: "Learning-first" };
 
   return (
     <main className="prism-shell">
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
 
-      {/* ── Top bar ── */}
+      {/* ── Topbar: exactly 2 children for the CSS grid ── */}
       <section className="topbar">
         <div className="topbar-copy">
           <p className="eyebrow">PRISM</p>
@@ -193,52 +147,29 @@ export function App() {
         </div>
 
         <div className="topbar-controls">
-          <div className="topbar-stats">
-            <div className="stat-block">
-              <p className="stat-label">Runtime sessions</p>
-              <p className="stat-value">
-                <strong>{session.status === "ready" ? session.events.length : 0}</strong>
-                <span>steps captured</span>
-              </p>
-            </div>
-            <div className="stat-block">
-              <p className="stat-label">Current lens</p>
-              <p className="stat-value">
-                <strong>{lens === "debug" ? "Debug Truth" : "Learning Lens"}</strong>
-                <span>{lensCopy.body}</span>
-              </p>
-            </div>
-          </div>
-
           <div className="control-block">
-            <p className="control-label">SURFACE</p>
+            <p className="control-label">Surface</p>
             <div className="segmented">
-              {surfaces.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={surface === item.id ? "segment active" : "segment"}
-                  onClick={() => setSurface(item.id)}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.caption}</span>
+              {surfaces.map((s) => (
+                <button key={s.id} type="button"
+                  className={surface === s.id ? "segment active" : "segment"}
+                  onClick={() => setSurface(s.id)}>
+                  <strong>{s.label}</strong>
+                  <span>{s.caption}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="control-block">
-            <p className="control-label">LENS</p>
+            <p className="control-label">Lens</p>
             <div className="segmented compact">
-              {lenses.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={lens === item.id ? "segment active" : "segment"}
-                  onClick={() => setLens(item.id)}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.caption}</span>
+              {lenses.map((l) => (
+                <button key={l.id} type="button"
+                  className={lens === l.id ? "segment active" : "segment"}
+                  onClick={() => setLens(l.id)}>
+                  <strong>{l.label}</strong>
+                  <span>{l.caption}</span>
                 </button>
               ))}
             </div>
@@ -246,72 +177,45 @@ export function App() {
         </div>
       </section>
 
-      {/* ── Workspace ── */}
+      {/* ── Workspace: exactly sidebar + content for the CSS grid ── */}
       <section className="workspace">
         <aside className="sidebar">
           <div className="sidebar-head">
-            <p className="eyebrow">WORKSPACE</p>
-            <h2>
-              {surface === "runtime"
-                ? session.status === "ready"
-                  ? "Active runtime session"
-                  : "Runtime timeline"
-                : "Architecture map"}
-            </h2>
+            <p className="eyebrow">Workspace</p>
+            <h2>{surface === "runtime"
+              ? isLive ? "Active runtime session" : "Runtime timeline"
+              : "Architecture map"}</h2>
             <p>{lensCopy.body}</p>
           </div>
 
-          {/* Run / Edit controls for runtime surface */}
+          {/* Run button inside sidebar-list area */}
           {surface === "runtime" && (
-            <div className="sidebar-actions">
-              <button type="button" className="run-button" onClick={handleRun}
-                disabled={session.status === "loading"}>
-                {session.status === "loading" ? "Executing..." : "Run Code"}
+            <div style={{ padding: "0 22px 8px" }}>
+              <button type="button" onClick={() => run(DEFAULT_CODE)}
+                disabled={session.status === "loading"}
+                style={{
+                  width: "100%", padding: "10px 16px",
+                  background: session.status === "loading" ? "#8a7060" : "#b55233",
+                  color: "#fff", border: "none", borderRadius: 10,
+                  fontWeight: 700, fontSize: "0.85rem", cursor: session.status === "loading" ? "wait" : "pointer",
+                  fontFamily: "inherit",
+                }}>
+                {session.status === "loading" ? "Executing via JDI..." : isLive ? "Run Again" : "Run Code"}
               </button>
-              <button type="button" className="edit-button"
-                onClick={() => setShowEditor(!showEditor)}>
-                {showEditor ? "Hide Editor" : "Edit Code"}
-              </button>
-            </div>
-          )}
-
-          {/* Editor panel */}
-          {showEditor && surface === "runtime" && (
-            <div className="code-editor-wrap">
-              <textarea
-                className="code-editor"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                spellCheck={false}
-                rows={14}
-              />
+              {isLive && (
+                <p style={{ fontSize: "0.72rem", color: "#506177", marginTop: 6, textAlign: "center" }}>
+                  {session.events.length} steps captured &middot; {session.sessionId}
+                </p>
+              )}
             </div>
           )}
 
           <div className="sidebar-list">
-            {surface === "runtime" ? (
-              session.status === "idle" ? (
-                <div className="sidebar-empty">
-                  <p>Click <strong>Run Code</strong> to execute Java and capture a trace.</p>
-                </div>
-              ) : session.status === "loading" ? (
-                <div className="sidebar-empty">
-                  <p>Compiling and tracing via JDI...</p>
-                </div>
-              ) : session.status === "error" ? (
-                <div className="sidebar-empty sidebar-error">
-                  <p>{session.error}</p>
-                </div>
-              ) : (
-                runtimeEvents.map((event) => (
-                  <button
-                    key={event.id}
-                    type="button"
-                    className={
-                      selectedRuntimeId === event.id ? "sidebar-item active" : "sidebar-item"
-                    }
-                    onClick={() => setSelectedRuntimeId(event.id)}
-                  >
+            {surface === "runtime"
+              ? runtimeEvents.map((event) => (
+                  <button key={event.id} type="button"
+                    className={selectedRuntimeId === event.id ? "sidebar-item active" : "sidebar-item"}
+                    onClick={() => setSelectedRuntimeId(event.id)}>
                     <span className="sidebar-index">{event.step}</span>
                     <div>
                       <strong>{event.event}</strong>
@@ -319,52 +223,33 @@ export function App() {
                     </div>
                   </button>
                 ))
-              )
-            ) : (
-              graphNodes.map((node) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  className={
-                    selectedGraphNodeId === node.id ? "sidebar-item active" : "sidebar-item"
-                  }
-                  onClick={() => setSelectedGraphNodeId(node.id)}
-                >
-                  <span className="sidebar-index glyph">
-                    {node.label
-                      .split(" ")
-                      .map((part) => part[0])
-                      .join("")
-                      .slice(0, 2)}
-                  </span>
-                  <div>
-                    <strong>{node.label}</strong>
-                    <p>{node.kind}</p>
-                  </div>
-                </button>
-              ))
-            )}
+              : graphNodes.map((node) => (
+                  <button key={node.id} type="button"
+                    className={selectedGraphNodeId === node.id ? "sidebar-item active" : "sidebar-item"}
+                    onClick={() => setSelectedGraphNodeId(node.id)}>
+                    <span className="sidebar-index glyph">
+                      {node.label.split(" ").map((p) => p[0]).join("").slice(0, 2)}
+                    </span>
+                    <div>
+                      <strong>{node.label}</strong>
+                      <p>{node.kind}</p>
+                    </div>
+                  </button>
+                ))}
           </div>
         </aside>
 
         <section className="content">
           <div className="content-head">
             <div>
-              <p className="eyebrow">NOW VIEWING</p>
-              <h2>
-                {surface === "runtime"
-                  ? session.status === "ready"
-                    ? `Step ${selectedRuntime.step} at ${selectedRuntime.line}`
-                    : "Runtime Studio"
-                  : selectedGraphNode.label}
-              </h2>
+              <p className="eyebrow">Now Viewing</p>
+              <h2>{surface === "runtime"
+                ? `Step ${selectedRuntime.step} at ${selectedRuntime.line}`
+                : selectedGraphNode.label}</h2>
             </div>
             <div className="content-pills">
               <span>{surface === "runtime" ? "UEF session" : "UGF graph"}</span>
               <span>{lens === "debug" ? "Technical lens" : "Guided lens"}</span>
-              {session.status === "ready" && surface === "runtime" && (
-                <span>{session.sessionId}</span>
-              )}
             </div>
           </div>
 
@@ -373,17 +258,12 @@ export function App() {
               <article className="primary-panel primary-panel-dark">
                 <div className="panel-head">
                   <div>
-                    <p className="panel-eyebrow">TRACE TIMELINE</p>
-                    <h3>{session.status === "ready" ? selectedRuntime.event : "Submit Java code"}</h3>
+                    <p className="panel-eyebrow">Trace timeline</p>
+                    <h3>{selectedRuntime.event}</h3>
                   </div>
-                  {session.status === "ready" && selectedRuntime.delta && (
-                    <span className="panel-pill">Delta: {selectedRuntime.delta}</span>
-                  )}
+                  <span className="panel-pill">{selectedRuntime.delta}</span>
                 </div>
-
-                {session.status === "ready" && (
-                  <p className="panel-body">{selectedRuntime.summary}</p>
-                )}
+                <p className="panel-body">{selectedRuntime.summary}</p>
 
                 <div className="code-frame">
                   <div className="code-head">
@@ -393,15 +273,11 @@ export function App() {
                   <div className="code-body">
                     {activeCode.map((line, idx) => {
                       const lineNum = idx + 1;
-                      const isActive = session.status === "ready"
+                      const isActive = isLive
                         ? selectedRuntime.line?.includes(`:${lineNum}`)
-                        : false;
-
+                        : line.startsWith(selectedRuntime.line.split(":")[1]);
                       return (
-                        <div
-                          key={idx}
-                          className={isActive ? "code-line active" : "code-line"}
-                        >
+                        <div key={idx} className={isActive ? "code-line active" : "code-line"}>
                           {line}
                         </div>
                       );
@@ -419,29 +295,17 @@ export function App() {
                     </div>
                     <span className="panel-pill panel-pill-soft">Stable references</span>
                   </div>
-
                   <div className="memory-grid">
                     <div className="memory-column">
                       <p className="memory-label">Stack</p>
-                      {(selectedRuntime.stack.length > 0
-                        ? selectedRuntime.stack
-                        : ["(no frames)"]
-                      ).map((item, i) => (
-                        <span key={i} className="memory-pill">
-                          {item}
-                        </span>
+                      {selectedRuntime.stack.map((item, i) => (
+                        <span key={i} className="memory-pill">{item}</span>
                       ))}
                     </div>
-
                     <div className="memory-column">
                       <p className="memory-label">Heap</p>
-                      {(selectedRuntime.heap.length > 0
-                        ? selectedRuntime.heap
-                        : ["(empty heap)"]
-                      ).map((item, i) => (
-                        <span key={i} className="memory-pill">
-                          {item}
-                        </span>
+                      {selectedRuntime.heap.map((item, i) => (
+                        <span key={i} className="memory-pill">{item}</span>
                       ))}
                     </div>
                   </div>
@@ -451,34 +315,18 @@ export function App() {
                   <p className="panel-eyebrow">{lensCopy.headline}</p>
                   <h3>{selectedRuntime.event}</h3>
                   <p className="panel-body">{lensCopy.body}</p>
-
                   <div className="detail-block">
                     <p className="detail-label">Source anchor</p>
                     <strong>{selectedRuntime.line}</strong>
                   </div>
-
                   <div className="detail-block">
                     <p className="detail-label">Observed state</p>
                     <div className="detail-pills">
-                      {[selectedRuntime.delta, ...selectedRuntime.heap]
-                        .filter(Boolean)
-                        .map((item, i) => (
-                          <span key={i}>{item}</span>
-                        ))}
+                      {[selectedRuntime.delta, ...selectedRuntime.heap].map((item, i) => (
+                        <span key={i}>{item}</span>
+                      ))}
                     </div>
                   </div>
-
-                  {session.status === "ready" && session.trace?.session && (
-                    <div className="detail-block">
-                      <p className="detail-label">Session info</p>
-                      <div className="detail-pills">
-                        <span>{session.trace.session.language}</span>
-                        <span>{session.trace.session.adapter}</span>
-                        <span>Java {session.trace.session.runtimeVersion}</span>
-                        <span>{session.trace.recording.mode}</span>
-                      </div>
-                    </div>
-                  )}
                 </article>
               </div>
             </>
@@ -493,40 +341,20 @@ export function App() {
                   <span className="panel-pill">{selectedGraphNode.kind}</span>
                 </div>
                 <p className="panel-body">{selectedGraphNode.summary}</p>
-
                 <div className="graph-frame">
-                  <svg
-                    className="graph-svg"
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                  >
+                  <svg className="graph-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     {graphEdges.map((edge) => {
-                      const from = getNode(edge.from);
-                      const to = getNode(edge.to);
+                      const from = getNode(edge.from); const to = getNode(edge.to);
                       if (!from || !to) return null;
-                      return (
-                        <line
-                          key={`${edge.from}-${edge.to}`}
-                          x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                          className="graph-edge"
-                        />
-                      );
+                      return <line key={`${edge.from}-${edge.to}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="graph-edge" />;
                     })}
                   </svg>
-
                   {graphNodes.map((node) => (
-                    <button
-                      key={node.id}
-                      type="button"
-                      className={
-                        selectedGraphNodeId === node.id ? "graph-node active" : "graph-node"
-                      }
+                    <button key={node.id} type="button"
+                      className={selectedGraphNodeId === node.id ? "graph-node active" : "graph-node"}
                       style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                      onClick={() => setSelectedGraphNodeId(node.id)}
-                    >
-                      <span>{node.label}</span>
-                      <small>{node.kind}</small>
+                      onClick={() => setSelectedGraphNodeId(node.id)}>
+                      <span>{node.label}</span><small>{node.kind}</small>
                     </button>
                   ))}
                 </div>
@@ -541,13 +369,10 @@ export function App() {
                     </div>
                     <span className="panel-pill panel-pill-soft">{relatedEdges.length} links</span>
                   </div>
-
                   <div className="edge-list">
                     {relatedEdges.map((edge) => (
                       <div key={`${edge.from}-${edge.to}`} className="edge-row">
-                        <strong>
-                          {getNode(edge.from)?.label} {"->"} {getNode(edge.to)?.label}
-                        </strong>
+                        <strong>{getNode(edge.from)?.label} → {getNode(edge.to)?.label}</strong>
                         <span>{edge.label}</span>
                       </div>
                     ))}
@@ -558,21 +383,16 @@ export function App() {
                   <p className="panel-eyebrow">{lensCopy.headline}</p>
                   <h3>{selectedGraphNode.label}</h3>
                   <p className="panel-body">{lensCopy.body}</p>
-
                   <div className="detail-block">
                     <p className="detail-label">Owner</p>
                     <strong>{selectedGraphNode.owner}</strong>
                   </div>
-
                   <div className="detail-block">
                     <p className="detail-label">Contracts</p>
                     <div className="detail-pills">
-                      {selectedGraphNode.contracts.map((item) => (
-                        <span key={item}>{item}</span>
-                      ))}
+                      {selectedGraphNode.contracts.map((c) => <span key={c}>{c}</span>)}
                     </div>
                   </div>
-
                   <div className="detail-block">
                     <p className="detail-label">Pressure</p>
                     <strong>{selectedGraphNode.stress}</strong>
