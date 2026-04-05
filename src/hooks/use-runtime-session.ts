@@ -2,24 +2,13 @@ import { useState, useCallback } from "react";
 import {
   executeCode,
   fetchTrace,
-  type UefTrace,
-  type UefStep,
-  type UefValue,
-  type UefFrame,
 } from "../api/nerva-client.js";
+import type { UefTrace, UefStep, UefValue, UefFrame } from "../types/uef.js";
+import type { RuntimeEvent } from "../types/prism.js";
 
-// ── Types that match Prism's existing UI ──
+export type { RuntimeEvent } from "../types/prism.js";
 
-export type RuntimeEvent = {
-  id: string;
-  step: number;
-  line: string;
-  event: string;
-  delta: string;
-  summary: string;
-  stack: string[];
-  heap: string[];
-};
+// ── Session state ──
 
 export type RuntimeSession = {
   sessionId: string;
