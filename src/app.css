@@ -821,3 +821,74 @@ button {
   background: rgba(231, 111, 81, 0.12);
   color: #b55233;
 }
+
+/* ── Code editor ── */
+
+.code-editor-panel {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(18, 29, 47, 0.08);
+  background: rgba(255, 252, 248, 0.75);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 48px rgba(42, 35, 24, 0.08);
+}
+
+.code-editor-textarea {
+  width: 100%;
+  margin-top: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(160deg, rgba(20, 29, 44, 0.98), rgba(35, 47, 67, 0.97));
+  color: #eef4fb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  font-family: "IBM Plex Mono", "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.88rem;
+  line-height: 1.75;
+  resize: vertical;
+  outline: none;
+  min-height: 280px;
+  tab-size: 2;
+}
+
+.code-editor-textarea:focus {
+  border-color: rgba(231, 111, 81, 0.4);
+  box-shadow: 0 0 0 3px rgba(231, 111, 81, 0.1);
+}
+
+.code-editor-textarea::placeholder {
+  color: rgba(238, 244, 251, 0.35);
+}
+
+.editor-action-btn {
+  padding: 10px 20px;
+  background: #b55233;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-action-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.editor-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.editor-action-secondary {
+  background: transparent;
+  color: #506177;
+  border: 1px solid rgba(18, 29, 47, 0.12);
+}
+
+.editor-action-secondary:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.03);
+  opacity: 1;
+}

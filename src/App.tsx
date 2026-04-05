@@ -13,8 +13,7 @@ export function App() {
 
   const { session, run } = useRuntimeSession();
 
-  const isLive = session.status === "ready";
-  const eventCount = isLive ? session.events.length : 5; // 5 mock events
+  const eventCount = session.status === "ready" ? session.events.length : 0;
   const { playback, ...playbackActions } = usePlayback(eventCount);
 
   return (

@@ -1,6 +1,7 @@
-import type { RuntimeEvent, Lens } from "../../types/prism.js";
+import { useState } from "react";
+import type { Lens } from "../../types/prism.js";
 import type { PlaybackState, PlaybackActions } from "../../hooks/use-playback.js";
-import { mockEvents, mockCodeLines, DEFAULT_CODE } from "../../types/prism.js";
+import { DEFAULT_CODE } from "../../types/prism.js";
 import { Sidebar } from "../layout/Sidebar.js";
 import { CodeViewer } from "./CodeViewer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
@@ -18,9 +19,83 @@ type Props = {
 };
 
 export function RuntimeWorkspace({ session, playback, playbackActions, lens, onRun }: Props) {
+  const [code, setCode] = useState(DEFAULT_CODE);
+
   const isLive = session.status === "ready";
-  const events = isLive ? session.events : mockEvents;
-  const codeLines = isLive ? session.codeLines : mockCodeLines;
+  const isLoading = session.status === "loading";
+  const hasError = session.status === "error";
+
+  function handleRun() {
+    onRun(code);
+  }
+
+  // ── Editor mode: no trace yet, or error ──
+  if (!isLive) {
+    return (
+      <section className="workspace">
+        <aside className="sidebar">
+          <div className="sidebar-head">
+            <p className="eyebrow">Workspace</p>
+            <h2>Code Editor</h2>
+            <p>Write Java code below, then click Run to capture an execution trace.</p>
+          </div>
+
+          <div style={{ padding: "0 22px 8px" }}>
+            <button type="button" className="editor-action-btn" style={{ width: "100%" }}
+              onClick={handleRun} disabled={isLoading || !code.trim()}>
+              {isLoading ? "Executing via JDI..." : "Run Code"}
+            </button>
+          </div>
+
+          {hasError && (
+            <div style={{ padding: "0 22px" }}>
+              <p style={{ fontSize: "0.82rem", color: "#d63031", lineHeight: 1.5 }}>
+                {session.error}
+              </p>
+            </div>
+          )}
+        </aside>
+
+        <section className="content">
+          <div className="content-head">
+            <div>
+              <p className="eyebrow">{isLoading ? "Executing" : "Code Input"}</p>
+              <h2>{isLoading ? "Running your code..." : "Write your Java code"}</h2>
+            </div>
+            <div className="content-pills">
+              <span>Java</span>
+              <span>{lens === "debug" ? "Technical lens" : "Guided lens"}</span>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <article className="primary-panel" style={{ textAlign: "center", padding: "64px 22px" }}>
+              <p className="panel-eyebrow">Tracium Engine</p>
+              <h3>Compiling and capturing execution trace...</h3>
+              <p className="panel-body">
+                Your code is being compiled, executed via JDI adapter, and every step is recorded into a UEF trace.
+              </p>
+            </article>
+          ) : (
+            <article className="primary-panel code-editor-panel">
+              <textarea
+                className="code-editor-textarea"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                spellCheck={false}
+                placeholder="Write your Java code here..."
+                rows={18}
+              />
+            </article>
+          )}
+        </section>
+      </section>
+    );
+  }
+
+  // ── Trace mode: live trace loaded ──
+  const events = session.events;
+  const codeLines = session.codeLines;
   const currentStep = events[playback.currentIndex] ?? events[0];
 
   return (
@@ -30,10 +105,10 @@ export function RuntimeWorkspace({ session, playback, playbackActions, lens, onR
         events={events}
         selectedIndex={playback.currentIndex}
         onSelect={playbackActions.goTo}
-        isLive={isLive}
+        isLive={true}
         sessionId={session.sessionId}
-        onRun={() => onRun(DEFAULT_CODE)}
-        isLoading={session.status === "loading"}
+        onRun={handleRun}
+        isLoading={false}
       />
 
       <section className="content">
@@ -63,7 +138,7 @@ export function RuntimeWorkspace({ session, playback, playbackActions, lens, onR
             <span className="panel-pill">{currentStep.delta}</span>
           </div>
           <p className="panel-body">{currentStep.summary}</p>
-          <CodeViewer codeLines={codeLines} activeLine={currentStep.line} isLive={isLive} />
+          <CodeViewer codeLines={codeLines} activeLine={currentStep.line} isLive={true} />
         </article>
 
         <div className="support-grid">
